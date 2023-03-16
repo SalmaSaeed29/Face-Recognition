@@ -1,0 +1,447 @@
+import pandas as pd
+import os
+import numpy as np
+import pandas as pd 
+from PIL import Image
+from PIL import ImageChops
+from sklearn import metrics
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from sklearn.decomposition import PCA
+from sklearn.metrics import confusion_matrix, classification_report
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.model_selection import cross_val_score, StratifiedKFold
+from sklearn.metrics import accuracy_score
+import statistics
+from matplotlib import pyplot as plt
+import natsort
+from natsort import natsorted
+from sklearn.metrics import ConfusionMatrixDisplay
+
+# for getting kaggle dataset from my drive
+#connecting to drive
+from google.colab import drive
+drive.mount('/content/gdrive')
+data_path = '/content/gdrive/MyDrive/PR'
+
+# prepare data
+image_label= 0
+
+labels = []
+data_matrix = np.empty((0,10304),int)
+
+for root, dirs, files in natsorted(os.walk(data_path)):
+        #loop through each subject directory
+        for subdir in natsorted(dirs):
+            #accessing each image folder
+            subdir_path = os.path.join(root , subdir)
+            # print("folder file ",subdir[1:], int(subdir[1:]))
+            image_label = int(subdir[1:])
+            for file in natsorted(os.listdir(subdir_path)):
+                # print("image file ",os.path.join(subdir_path , file))
+                img = Image.open(os.path.join(subdir_path , file)).convert('L') 
+                #img.show()
+                 # get a 1D array of pixels
+                image_vector = np.asarray(img).ravel()
+                # print("image vector ",image_vector)
+                data_matrix = np.append(data_matrix, np.array([image_vector]), axis = 0)
+                labels.append(image_label)
+
+
+pd.DataFrame(data_matrix)
+
+pd.DataFrame(labels)
+
+# split data
+def split_data(labels, data_matrix):
+  labels_train = []
+  labels_test = []
+  faces_train = np.empty((0,10304),int)
+  faces_test = np.empty((0,10304),int)
+
+
+
+  split_labels = 0;
+  for label in labels:
+    if split_labels % 2 == 0:
+        labels_test.append(label)
+    else:
+        labels_train.append(label)
+    split_labels += 1
+
+  split_imgs = 0
+  for img in data_matrix:
+    if split_imgs % 2 == 0:
+        faces_test = np.append(faces_test, np.array([img]), axis=0)
+
+    else:
+        faces_train=np.append(faces_train, np.array([img]), axis=0)
+    split_imgs += 1
+  
+  return faces_train , labels_train , faces_test , labels_test
+  
+  #split data for bonus 70% training and 30% testing
+labels_train_set= []
+labels_test_set = []
+faces_train_set = np.empty((0,10304),int)
+faces_test_set = np.empty((0,10304),int)
+
+counter_labels = 0;
+
+for label in labels:
+    if counter_labels < 7:
+        labels_train_set.append(label)
+    else:
+        labels_test_set.append(label)
+
+    counter_labels += 1
+
+    if counter_labels == 10 :
+      counter_labels = 0
+
+counter_imgs = 0
+for img in data_matrix:
+    if counter_imgs < 7:
+        faces_train_set = np.append(faces_train_set, np.array([img]), axis=0)
+
+    else:
+        faces_test_set = np.append(faces_test_set, np.array([img]), axis=0)
+
+    counter_imgs += 1
+
+    if counter_imgs == 10 :
+      counter_imgs = 0
+
+print ("for 70 % and 30 % splitting : ")
+print ("------------------------------")
+print ("faces train size :", faces_train_set.shape)
+print ("faces test size  :", faces_test_set.shape)
+print ("label train size :", len(labels_train_set))
+print ("label test size  :",len(labels_test_set))
+
+# for KNN ( k nearsest neighbours ) algorithm
+
+def KNN_algorithm(faces_train_available ,  labels_train , faces_test_available , labels_test):
+  max_accuracy = 0
+  optimal_k = 0
+  all_accuracies = []
+  optimal_prediction = []
+
+  for k in range (1 , 8 , 2):
+    # fitting KNN classifier for given k from (1 , 3 , 5 , 7)
+    knn = KNeighborsClassifier(n_neighbors = k)
+    knn.fit(faces_train_available ,  labels_train)
+
+
+    # Predicting results using Test data set
+    predict  = knn.predict(faces_test_available)
+    accuracy = accuracy_score(predict , labels_test)
+    all_accuracies.append(accuracy)
+
+    # updating max accuracy
+    if max_accuracy  < accuracy : 
+      max_accuracy = accuracy
+      optimal_k = k
+      optimal_prediction = predict
+
+
+  print("all accuracies               : " , all_accuracies)
+  print("the best accuracy among them : " , max_accuracy)
+  print("the best k for the given k's : " , optimal_k)
+  # print("the best prediction          : " )
+  # print(optimal_prediction)
+  return max_accuracy , optimal_k , optimal_prediction
+
+print ("for half and half splitting : ")
+print ("------------------------------")
+faces_train , labels_train , faces_test , labels_test = split_data(labels,data_matrix)
+KNN_algorithm(faces_train , labels_train , faces_test , labels_test)
+
+print ("for 70 % and 30 % splitting : ")
+print ("------------------------------")
+KNN_algorithm(faces_train_set , labels_train_set , faces_test_set , labels_test_set)
+
+def get_Eigens(faces_train) :
+  
+    #Compute Means
+    Means = np.mean(faces_train, axis=0)
+
+
+    #Center the data around Origin
+    Z = faces_train - Means
+ 
+
+    #Compute Covariance Matrix
+    cov = np.cov(np.transpose(Z))
+
+
+    #Compute eigenvalues and eigenvectors
+    
+    EigenValues , EigenVectors = np.linalg.eigh(cov)
+    #sort descending
+    index = EigenValues.argsort()[::-1]   
+    EigenValues = EigenValues[index]
+    EigenVectors = EigenVectors[:,index]
+
+    return EigenValues , EigenVectors
+    
+    def projection_Matrix(EigenValues, EigenVectors, alpha) : 
+    total_sum_Evalues = np.sum(EigenValues) 
+    sum = 0 
+    r = 0
+    for Evalue in EigenValues : 
+          r += 1
+          sum += Evalue
+          ratio = sum / total_sum_Evalues
+          if(ratio >= alpha) :
+            break
+
+    print("number of eigen values taken : ", r)
+    U = EigenVectors[:, :r]
+    #print("\nU : ", U)
+    return U
+    
+    def testing_pca(train_data ,test_data ,labels_train, labels_test) : 
+    EigenValues,EigenVectors = get_Eigens(train_data)
+    alpha = [0.8,0.85,0.9,0.95] 
+    for a in alpha :
+      print("Alpha = ", a)
+      U = projection_Matrix(EigenValues, EigenVectors, a)
+      faces_train_reduced = np.dot(train_data, U)
+      faces_test_reduced = np.dot(test_data, U)
+      max_accuracy , optimal_k , optimal_prediction = KNN_algorithm(faces_train_reduced,labels_train,faces_test_reduced,labels_test)
+      print("Best n-neighbours: ",optimal_k)
+      print("K-NN Accuracy: ",max_accuracy, "\n")
+      
+      testing_pca(faces_train,faces_test, labels_train, labels_test)
+      
+      # for 70% training and 30% testing
+
+testing_pca(faces_train_set , faces_test_set , labels_train_set , labels_test_set)
+
+def LDA_Eigen(num_classes, instances_per_class, faces_train):
+  num_instances = np.size(faces_train, 0)
+
+  # Data matrix is 200 x 10304 for training set and same for testing set 
+  # we have 40 class number of samples in each class is 5 for training set
+  # calculate the mean vector of the overall sample needs reshaping to be 10304 x 1 
+  overall_mean = np.mean(faces_train, axis = 0)
+  overall_mean = overall_mean.reshape(10304, 1)
+
+  # splitting data into classes
+  classes_data = []
+  count = 0
+  for i in range(num_classes):
+    d = faces_train[count:count+instances_per_class[i]]
+    classes_data.append(d)
+    # print(classes_data)
+    count += instances_per_class[i]
+  
+  # calculate mean for every class of the 40 class
+  # classes mean array of means 10304 x 1
+  classes_means = []
+
+  for i in range(num_classes):
+    mean = np.mean(classes_data[i], axis = 0)
+    classes_means.append(mean.reshape(10304,1))
+
+  # getting Sb matrix 10304 x 10304
+  Sb = np.zeros((10304, 10304))
+  for i in range(num_classes):
+    difference = classes_means[i] - overall_mean
+    Sb = np.add(Sb, np.dot(instances_per_class[i], np.dot(difference, np.transpose(difference))))
+
+
+  # getting normalized matrices Zi each z is 5 x 10304
+  # getting si each s is 5 x 10304
+  # getting s 10304 x 10304 by summing all si 
+  s = np.zeros((10304, 10304))
+  for i in range(num_classes):
+    z = classes_data[i] - np.transpose(classes_means[i])
+    s = np.add(s, np.dot(np.transpose(z), z))
+
+  # compute eigen values and eigen vectors
+  s_inverse = np.linalg.inv(s)
+  eigen_values, eigen_vectors = np.linalg.eigh(np.dot(s_inverse, Sb))
+
+  print(len(eigen_values))
+  return eigen_values, eigen_vectors
+  
+  def LDA_Projected(faces_train, faces_test, eigen_values, eigen_vectors, num_dominant_eigen_vectors):
+  index = eigen_values.argsort()[::-1]   
+  eigen_values = eigen_values[index]
+  eigen_vectors = eigen_vectors[:,index]
+
+  # projection matrix
+  projection_matrix = eigen_vectors[:,:num_dominant_eigen_vectors]
+  # data after projection
+  projected_faces_train = np.dot(faces_train, projection_matrix)
+  projected_faces_test = np.dot(faces_test, projection_matrix)
+
+  return projected_faces_train, projected_faces_test
+  
+  # testing LDA
+instances_per_class = np.full(40, 5)
+eigen_values, eigen_vectors = LDA_Eigen(40, instances_per_class, faces_train)
+projected_faces_train, projected_faces_test = LDA_Projected(faces_train, faces_test, eigen_values, eigen_vectors, 39)
+print(projected_faces_train.shape)
+print(projected_faces_test.shape)
+
+max_accuracy, optimal_k, prediction = KNN_algorithm(projected_faces_train, labels_train, projected_faces_test, labels_test)
+print("Best n-neighbours: ", optimal_k)
+print("K-NN Accuracy: ", max_accuracy,"\n")
+
+# testing LDA accuracy for 70% training and 30% testing
+instances_per_class = np.full(40, 7)
+eigen_values_set, eigen_vectors_set = LDA_Eigen(40, instances_per_class, faces_train_set)
+projected_faces_train_set, projected_faces_test_set = LDA_Projected(faces_train_set, faces_test_set, eigen_values_set, eigen_vectors_set, 39)
+print(projected_faces_train_set.shape)
+print(projected_faces_test_set.shape)
+
+max_accuracy_bonus, optimal_k_bonus, prediction_bonus = KNN_algorithm(projected_faces_train_set, labels_train_set, projected_faces_test_set, labels_test_set)
+print("Best n-neighbours: ", optimal_k_bonus)
+print("K-NN Accuracy: ", max_accuracy_bonus ,"\n")
+
+# for gettingnatural images
+#connecting to drive
+from google.colab import drive
+drive.mount('/content/gdrive')
+data_path_nonFace= '/content/gdrive/MyDrive/natural_images'
+
+# prepare data
+import cv2
+
+data_matrix_non_faces = np.empty((0,10304),int)
+# print(data_matrix_non_faces)
+# counter=0
+for root, dirs, files in natsorted(os.walk(data_path_nonFace)):
+        #loop through each subject directory
+        for subdir in natsorted(dirs):
+            #accessing each image folder
+            subdir_path = os.path.join(root , subdir)
+            # print("folder file ",subdir)
+            for file in natsorted(os.listdir(subdir_path)):
+                # print("image file ",os.path.join(subdir_path , file))
+                img = Image.open(os.path.join(subdir_path , file)).convert('L') 
+                img = img.resize((92, 112))
+                 # get a 1D array of pixels
+                image_vector = np.asarray(img).ravel()
+                # print("image vector ",image_vector)
+                # print("image size ",image_vector.shape)
+                data_matrix_non_faces = np.append(data_matrix_non_faces, np.array([image_vector]), axis=0)
+                # counter+=1
+                # if counter==300 :
+                #   counter=0
+                #   break
+
+
+# shuffling non faces matrix to mix all different types of non faces
+# print(data_matrix_non_faces)
+# print(data_matrix_non_faces[0])
+print(data_matrix_non_faces.shape)
+# np.random.shuffle(data_matrix_non_faces)
+# print(data_matrix_non_faces)
+
+def faces(data_matrix):
+  faces_train = np.empty((0,10305),int)
+  faces_test = np.empty((0,10305),int)
+
+  split = 0;
+  for img in data_matrix:
+      if split % 2 == 0:
+        faces_test=np.append(faces_test, np.array([img]), axis=0)
+
+      else:
+        faces_train=np.append(faces_train, np.array([img]), axis=0)
+
+      split += 1
+
+
+  return faces_train, faces_test
+  
+  def get_train_test(faces_data_matrix,non_faces_data_matrix,size) :  
+
+  
+  #creating labels array
+  label_faces = np.full(400, 1)
+  label_non_faces = np.full(400, 0)
+  
+  #adding label column to marix
+  faces_matrix = np.column_stack((faces_data_matrix, label_faces.T))
+  non_faces_matrix = np.column_stack((non_faces_data_matrix, label_non_faces.T))
+
+  faces_train, faces_test = faces(faces_matrix)
+  non_faces_train,non_faces_test = faces(non_faces_matrix[:size,:])
+ 
+
+  mixed_train = np.concatenate((faces_train, non_faces_train))
+  mixed_test = np.concatenate((faces_test, non_faces_test))
+  
+ 
+
+  # labesls train, labels test, matrix train, matrix test
+  return mixed_train[:,10304],mixed_test[:,10304],mixed_train[:,:10304],mixed_test[:,:10304]
+  
+  # printing images
+def print_images(data_images, index, title, classification):
+    my_img = data_images[index]
+    my_img = np.reshape(my_img, (112, 92))
+    plt.imshow(my_img, cmap='gray')
+    plt.title(title + str(index))
+    plt.show()
+    print("classified as ", classification, "\n")
+    plt.close()
+    
+    from numpy.lib.function_base import append
+#  getting some of the indexes of classified and misclassified data
+def classified_misclassified(data_images, true_labels, pred_labels):
+  classified_counter = 0
+  misclassified_counter = 0
+  classification = lambda x : "Face" if (x == 1) else "Non face"
+  for i in range(0, len(true_labels), 5) :
+    if true_labels[i] == pred_labels[i] :
+        if classified_counter < 20 :
+            # print classified
+            classified_counter += 1
+            print_images(data_images, i, "Correctly classified images  ", classification(pred_labels[i]))
+    else :
+        if misclassified_counter < 20 :
+            # print misclassified
+            misclassified_counter += 1
+            print_images(data_images, i, "Misclassified images  ", classification(pred_labels[i]))
+
+    if classified_counter == 20 & misclassified_counter == 20 :
+        break
+  print(classified_counter)
+  print(misclassified_counter)
+  
+  mixed_label_train, mixed_label_test, mixed_data_train , mixed_data_test = get_train_test(data_matrix , data_matrix_non_faces , 200 )
+instances_per_classes_mixed= np.array([200, 200])
+eigen_values_mixed, eigen_vectors_mixed = LDA_Eigen(2 , instances_per_classes_mixed, mixed_data_train)
+projected_faces_train, projected_faces_test = LDA_Projected(mixed_data_train,mixed_data_test , eigen_values_mixed, eigen_vectors_mixed, 1)
+max_accuracy_i , best_k_i, labels_pred_mixed = KNN_algorithm(projected_faces_train, mixed_label_train, projected_faces_test, mixed_label_test)
+classified_misclassified(mixed_data_test, mixed_label_test , labels_pred_mixed)
+
+
+
+for i in range(50, 450 , 50):
+    labels_training, labels_testing, data_training , data_testing = get_train_test(data_matrix , data_matrix_non_faces , i)
+    print("Accuracies for ", i ," Non-Faces : ")
+    testing_pca(data_training, data_testing, labels_training, labels_testing)
+    
+    for i in range(50, 450, 50):
+  print("Non faces : ", i)
+  labels_training, labels_testing, data_training , data_testing = get_train_test(data_matrix , data_matrix_non_faces , i)
+  # getting number of eigen vectors
+  instances_per_classes = np.array([200, i//2])
+  eigen_values_i, eigen_vectors_i = LDA_Eigen(2 , instances_per_classes, data_training)
+  projected_faces_train, projected_faces_test = LDA_Projected(data_training, data_testing, eigen_values_i, eigen_vectors_i, 1)
+  best_accuracy_i , best_k_i, best_pred = KNN_algorithm(projected_faces_train, labels_training, projected_faces_test, labels_testing)
+  confusion_matrix = metrics.confusion_matrix(labels_testing, best_pred)
+  plot = ConfusionMatrixDisplay(confusion_matrix = confusion_matrix, display_labels=['Non-Faces','Faces'])
+  plot.plot()
+  plt.show()
+  print(metrics.classification_report(labels_testing, best_pred),"\n")
+  print("neighbor  ",best_k_i,"\n")
+  
+  
